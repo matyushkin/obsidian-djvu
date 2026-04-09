@@ -7,7 +7,8 @@
     "build:wasm": "wasm-pack build --target web --out-dir $(pwd)/pkg /Users/leo/Code/djvu-rs --features wasm",
     "embed:wasm": "node scripts/embed-wasm.mjs",
     "build": "npm run embed:wasm && esbuild src/main.ts --bundle --external:obsidian --outfile=main.js --format=cjs --platform=node",
-    "dev": "npm run embed:wasm && esbuild src/main.ts --bundle --external:obsidian --outfile=main.js --format=cjs --platform=node --watch"
+    "dev": "npm run embed:wasm && esbuild src/main.ts --bundle --external:obsidian --outfile=main.js --format=cjs --platform=node --watch",
+    "test": "node scripts/test-wasm.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
