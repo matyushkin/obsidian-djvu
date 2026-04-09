@@ -42,8 +42,13 @@ jobs:
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
+      - name: Clone djvu-rs
+        run: git clone https://github.com/matyushkin/djvu-rs /tmp/djvu-rs
+
       - name: Build WASM
         run: npm run build:wasm
+        env:
+          DJVU_RS_PATH: /tmp/djvu-rs
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
