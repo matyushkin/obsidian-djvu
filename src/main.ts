@@ -45,7 +45,9 @@ class DjVuView extends FileView {
 
   // canvas area
   private canvasWrap!: HTMLDivElement;
+  private pageContainer!: HTMLDivElement;
   private canvas!: HTMLCanvasElement;
+  private textLayer!: HTMLDivElement;
   private spinner!: HTMLDivElement;
 
   constructor(leaf: WorkspaceLeaf, plugin: DjVuPlugin) {
@@ -62,7 +64,7 @@ class DjVuView extends FileView {
   async onLoadFile(file: TFile): Promise<void> {
     this.contentEl.empty();
     this.contentEl.addClass('djvu-container');
-    this.doc = null;
+    if (this.doc) { this.doc.free(); this.doc = null; }
     this.buildUI();
     this.setSpinner(true);
 
@@ -92,6 +94,7 @@ class DjVuView extends FileView {
       page: this.currentPage,
       dpi: this.currentDpi,
     });
+    if (this.doc) { this.doc.free(); this.doc = null; }
   }
 
   // ── Build UI ────────────────────────────────────────────────────────────────
@@ -169,7 +172,9 @@ class DjVuView extends FileView {
     this.spinner = this.canvasWrap.createDiv({ cls: 'djvu-spinner' });
     this.spinner.createDiv({ cls: 'djvu-spinner-ring' });
 
-    this.canvas = this.canvasWrap.createEl('canvas', { cls: 'djvu-canvas' });
+    this.pageContainer = this.canvasWrap.createDiv({ cls: 'djvu-page-container' });
+    this.canvas = this.pageContainer.createEl('canvas', { cls: 'djvu-canvas' });
+    this.textLayer = this.pageContainer.createDiv({ cls: 'djvu-text-layer' });
 
     // keyboard
     this.registerDomEvent(document, 'keydown', (e: KeyboardEvent) => {
@@ -259,6 +264,7 @@ class DjVuView extends FileView {
       const containerWidth = this.canvasWrap.clientWidth - 32;
       const nativeDpi = page.dpi();
       const nativeWidth = page.width_at(nativeDpi);
+      page.free();
       this.currentDpi = Math.max(
         36,
         Math.min(600, Math.round((containerWidth / nativeWidth) * nativeDpi)),
@@ -277,19 +283,59 @@ class DjVuView extends FileView {
   private async renderPage() {
     if (!this.doc) return;
     this.setSpinner(true);
+    const page = this.doc.page(this.currentPage);
     try {
       await new Promise<void>(r => setTimeout(r, 0)); // let spinner paint
-      const page = this.doc.page(this.currentPage);
       const w = page.width_at(this.currentDpi);
       const h = page.height_at(this.currentDpi);
       const pixels = page.render(this.currentDpi);
       this.canvas.width = w;
       this.canvas.height = h;
-      this.canvas.getContext('2d')!.putImageData(new ImageData(pixels, w, h), 0, 0);
+      const ctx = this.canvas.getContext('2d');
+      if (!ctx) throw new Error('canvas 2d context unavailable');
+      ctx.putImageData(new ImageData(pixels, w, h), 0, 0);
+      pixels.free();
+      this.pageContainer.style.width  = `${w}px`;
+      this.pageContainer.style.height = `${h}px`;
+      this.renderTextLayer(page, w, h);
     } catch (e) {
+      console.error('[djvu] renderPage error', e);
       new Notice(`DjVu render error: ${(e as Error).message}`);
     } finally {
+      page.free();
       this.setSpinner(false);
+    }
+  }
+
+  // ── Text layer ─────────────────────────────────────────────────────────────
+
+  private renderTextLayer(page: import('../pkg/djvu_rs').WasmPage, w: number, h: number) {
+    this.textLayer.empty();
+    this.textLayer.style.width  = `${w}px`;
+    this.textLayer.style.height = `${h}px`;
+
+    let json: string | null | undefined;
+    try { json = page.text_zones_json(this.currentDpi); } catch { return; }
+    if (!json) return;
+
+    const zones: Array<{ t: string; x: number; y: number; w: number; h: number }> =
+      JSON.parse(json);
+
+    for (const z of zones) {
+      if (!z.w || !z.h || !z.t) continue;
+      const span = this.textLayer.createEl('span');
+      span.textContent = z.t;
+      span.style.left     = `${z.x}px`;
+      span.style.top      = `${z.y}px`;
+      span.style.width    = `${z.w}px`;
+      span.style.height   = `${z.h}px`;
+      span.style.fontSize = `${z.h}px`;
+    }
+
+    // Scale each span horizontally to fit its zone width
+    for (const span of Array.from(this.textLayer.children) as HTMLElement[]) {
+      const nw = span.scrollWidth;
+      if (nw > 0) span.style.transform = `scaleX(${parseInt(span.style.width) / nw})`;
     }
   }
 
@@ -297,8 +343,8 @@ class DjVuView extends FileView {
 
   private async copyPageText() {
     if (!this.doc) return;
+    const page = this.doc.page(this.currentPage);
     try {
-      const page = this.doc.page(this.currentPage);
       const text = page.text();
       if (!text) {
         new Notice('No text layer on this page');
@@ -308,6 +354,8 @@ class DjVuView extends FileView {
       new Notice('Page text copied');
     } catch (e) {
       new Notice(`Could not copy text: ${(e as Error).message}`);
+    } finally {
+      page.free();
     }
   }
 

@@ -100,11 +100,34 @@
   position: relative;
 }
 
+.djvu-page-container {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+  margin: 0 auto;
+}
+
 .djvu-canvas {
   display: block;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
-  flex-shrink: 0;
-  margin: 0 auto;
+}
+
+.djvu-text-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: text;
+}
+
+.djvu-text-layer span {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0 0;
+  pointer-events: all;
 }
 
 .djvu-canvas--hidden {
