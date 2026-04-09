@@ -7,24 +7,39 @@
  * Called automatically by npm run build / npm run dev.
  */
 
-import { readFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const wasmPath = join(root, 'pkg', 'djvu_rs_bg.wasm');
+const pkgDir = join(root, 'pkg');
+const wasmPath = join(pkgDir, 'djvu_rs_bg.wasm');
 
-let wasm;
-try {
-  wasm = readFileSync(wasmPath);
-} catch {
+// ── Preflight ─────────────────────────────────────────────────────────────────
+
+if (!existsSync(pkgDir)) {
   console.error(
-    '\n[embed-wasm] ERROR: pkg/djvu_rs_bg.wasm not found.\n' +
-    '  Run: npm run build:wasm\n'
+    '\n[embed-wasm] ERROR: pkg/ directory not found.\n' +
+    '  The WASM package must be built before bundling the plugin.\n\n' +
+    '  Run:\n' +
+    '    npm run build:wasm\n'
   );
   process.exit(1);
 }
 
+if (!existsSync(wasmPath)) {
+  console.error(
+    '\n[embed-wasm] ERROR: pkg/djvu_rs_bg.wasm not found.\n' +
+    '  pkg/ exists but the WASM binary is missing — re-run the WASM build.\n\n' +
+    '  Run:\n' +
+    '    npm run build:wasm\n'
+  );
+  process.exit(1);
+}
+
+// ── Embed ─────────────────────────────────────────────────────────────────────
+
+const wasm = readFileSync(wasmPath);
 const b64 = wasm.toString('base64');
 const out = join(root, 'src', 'wasm_inline.ts');
 
@@ -36,5 +51,6 @@ writeFileSync(
 );
 
 console.log(
-  `[embed-wasm] ${wasm.length.toLocaleString()} bytes → base64 (${b64.length.toLocaleString()} chars) → src/wasm_inline.ts`
+  `[embed-wasm] ${wasm.length.toLocaleString()} bytes → base64 ` +
+  `(${b64.length.toLocaleString()} chars) → src/wasm_inline.ts`
 );
