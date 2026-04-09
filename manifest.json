@@ -1,0 +1,11 @@
+{
+  "id": "obsidian-djvu",
+  "name": "DjVu Viewer",
+  "version": "0.1.0",
+  "minAppVersion": "1.4.0",
+  "description": "Open and read DjVu files natively in Obsidian, powered by djvu-rs WebAssembly.",
+  "author": "matyushkin",
+  "authorUrl": "https://github.com/matyushkin",
+  "fundingUrl": "https://github.com/matyushkin/djvu-rs",
+  "isDesktopOnly": false
+}

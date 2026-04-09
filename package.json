@@ -1,0 +1,17 @@
+{
+  "name": "obsidian-djvu",
+  "version": "0.1.0",
+  "description": "Obsidian plugin: open DjVu files natively via djvu-rs WebAssembly",
+  "main": "main.js",
+  "scripts": {
+    "build:wasm": "wasm-pack build --target bundler --out-dir pkg ../djvu-rs --features wasm",
+    "build": "esbuild src/main.ts --bundle --external:obsidian --outfile=main.js --format=cjs --platform=node",
+    "dev": "esbuild src/main.ts --bundle --external:obsidian --outfile=main.js --format=cjs --platform=node --watch"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.20.0",
+    "obsidian": "latest",
+    "typescript": "^5.0.0"
+  }
+}

@@ -1,0 +1,4 @@
+node_modules/
+pkg/
+main.js
+*.js.map
