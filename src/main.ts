@@ -35,6 +35,11 @@ class DjVuView extends FileView {
   private currentDpi = 150;
   private fitWidth = false;
 
+  // debounce timers
+  private renderTimeout: ReturnType<typeof setTimeout> | null = null;
+  private resizeTimeout: ReturnType<typeof setTimeout> | null = null;
+  private saveTimeout: ReturnType<typeof setTimeout> | null = null;
+
   // toolbar elements
   private prevBtn!: HTMLButtonElement;
   private nextBtn!: HTMLButtonElement;
@@ -153,7 +158,7 @@ class DjVuView extends FileView {
       this.fitWidth = false;
       this.currentDpi = Number(this.dpiRange.value);
       this.dpiVal.setText(String(this.currentDpi));
-      this.renderPage();
+      this.scheduleRender();
     };
 
     toolbar.createSpan({ cls: 'djvu-sep' });
@@ -203,9 +208,14 @@ class DjVuView extends FileView {
       { passive: true },
     );
 
-    // re-fit on resize
+    // re-fit on resize (debounced)
     const ro = new ResizeObserver(() => {
-      if (this.fitWidth) this.applyFitWidth();
+      if (!this.fitWidth) return;
+      if (this.resizeTimeout) clearTimeout(this.resizeTimeout);
+      this.resizeTimeout = setTimeout(() => {
+        this.resizeTimeout = null;
+        this.applyFitWidth();
+      }, 100);
     });
     ro.observe(this.canvasWrap);
     this.register(() => ro.disconnect());
@@ -259,12 +269,11 @@ class DjVuView extends FileView {
   private applyFitWidth() {
     if (!this.doc) return;
     this.fitWidth = true;
+    const page = this.doc.page(this.currentPage);
     try {
-      const page = this.doc.page(this.currentPage);
       const containerWidth = this.canvasWrap.clientWidth - 32;
       const nativeDpi = page.dpi();
       const nativeWidth = page.width_at(nativeDpi);
-      page.free();
       this.currentDpi = Math.max(
         36,
         Math.min(600, Math.round((containerWidth / nativeWidth) * nativeDpi)),
@@ -275,10 +284,20 @@ class DjVuView extends FileView {
       this.persistState();
     } catch (e) {
       new Notice(`DjVu: ${(e as Error).message}`);
+    } finally {
+      page.free();
     }
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────
+
+  private scheduleRender(delay = 50) {
+    if (this.renderTimeout) clearTimeout(this.renderTimeout);
+    this.renderTimeout = setTimeout(() => {
+      this.renderTimeout = null;
+      this.renderPage();
+    }, delay);
+  }
 
   private async renderPage() {
     if (!this.doc) return;
@@ -294,7 +313,6 @@ class DjVuView extends FileView {
       const ctx = this.canvas.getContext('2d');
       if (!ctx) throw new Error('canvas 2d context unavailable');
       ctx.putImageData(new ImageData(pixels, w, h), 0, 0);
-      pixels.free();
       this.pageContainer.style.width  = `${w}px`;
       this.pageContainer.style.height = `${h}px`;
       this.renderTextLayer(page, w, h);
@@ -362,12 +380,17 @@ class DjVuView extends FileView {
   // ── State persistence ───────────────────────────────────────────────────────
 
   private persistState() {
-    if (this.file) {
-      this.plugin.saveFileState(this.file.path, {
-        page: this.currentPage,
-        dpi: this.currentDpi,
-      });
-    }
+    if (!this.file) return;
+    if (this.saveTimeout) clearTimeout(this.saveTimeout);
+    this.saveTimeout = setTimeout(() => {
+      this.saveTimeout = null;
+      if (this.file) {
+        this.plugin.saveFileState(this.file.path, {
+          page: this.currentPage,
+          dpi: this.currentDpi,
+        });
+      }
+    }, 500);
   }
 }
 
@@ -379,6 +402,7 @@ export default class DjVuPlugin extends Plugin {
 
   async onload() {
     this.data = Object.assign({}, DEFAULT_DATA, await this.loadData());
+    this.pruneFileStates();
 
     this.wasmReady = (async () => {
       const bytes = Uint8Array.from(atob(WASM_BASE64), c => c.charCodeAt(0));
@@ -400,5 +424,26 @@ export default class DjVuPlugin extends Plugin {
   saveFileState(path: string, state: DjVuFileState): void {
     this.data.fileStates[path] = state;
     this.saveData(this.data); // fire-and-forget
+  }
+
+  private pruneFileStates() {
+    const MAX_ENTRIES = 500;
+    const states = this.data.fileStates;
+
+    // Remove entries for files that no longer exist in the vault
+    for (const path of Object.keys(states)) {
+      if (!this.app.vault.getAbstractFileByPath(path)) {
+        delete states[path];
+      }
+    }
+
+    // LRU cap: if still over limit, trim to MAX_ENTRIES (keep last entries)
+    const keys = Object.keys(states);
+    if (keys.length > MAX_ENTRIES) {
+      const toRemove = keys.slice(0, keys.length - MAX_ENTRIES);
+      for (const path of toRemove) {
+        delete states[path];
+      }
+    }
   }
 }
